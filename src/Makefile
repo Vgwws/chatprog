@@ -9,7 +9,7 @@ CLIENT_OBJ := client.o
 all: server client
 
 %.o: %.c
-	gcc $(CFLAGS) $< -o $@
+	gcc $(CFLAGS) -O2 $< -o $@
 
 server: $(SERVER_OBJ)
 	gcc $^ -o $@

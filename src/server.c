@@ -15,15 +15,32 @@ pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void* client_handle(void* args){
 	char message[BUFFER_SIZE];
+	char username[BUFFER_SIZE];
 	unsigned int index_socket = *(unsigned int*)args;
+	int username_size = recv(
+			clients_socket[index_socket], username, BUFFER_SIZE, 0);
+	if(username_size == 0){
+		printf("Client disconnected\n");
+		close(clients_socket[index_socket]);
+		clients_socket[index_socket] = -1;
+		free(args);
+		pthread_exit(NULL);
+	}
+	if(username_size < 0){
+		fprintf(stderr, "ERROR: Recv failed\n");
+		close(clients_socket[index_socket]);
+		clients_socket[index_socket] = -1;
+		free(args);
+		pthread_exit(NULL);
+	}
 	while(1){
-		int recv_size = recv(
+		int message_size = recv(
 				clients_socket[index_socket], message, BUFFER_SIZE, 0);
-		if(recv_size == 0){
+		if(message_size == 0){
 			printf("Client disconnected\n");
 			break;
 		}
-		if(recv_size < 0){
+		if(message_size < 0){
 			fprintf(stderr, "ERROR: Recv failed\n");
 			break;
 		}
@@ -31,15 +48,20 @@ void* client_handle(void* args){
 		for(unsigned int i = 0; i < MAX_CLIENTS; i++){
 			if(i == index_socket || clients_socket[i] < 0)
 				continue;
-			if(send(clients_socket[i], message, recv_size, 0) < 0){
+			if(send(clients_socket[i], username, username_size, 0) < 0){
 				fprintf(stderr, "ERROR: Send failed\n");
-				break;
+				continue;
+			}
+			if(send(clients_socket[i], message, message_size, 0) < 0){
+				fprintf(stderr, "ERROR: Send failed\n");
+				continue;
 			}
 		}
 		pthread_mutex_unlock(&clients_mutex);
 	}
 	close(clients_socket[index_socket]);
 	clients_socket[index_socket] = -1;
+	free(args);
 	pthread_exit(NULL);
 }
 
