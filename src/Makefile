@@ -2,7 +2,9 @@
 
 CFLAGS := -c -I ../include -Wall -Wextra -Werror -std=gnu99
 
-SERVER_OBJ := server.o
+SERVER_OBJ := server.o \
+							env_parser.o \
+							db.o
 
 CLIENT_OBJ := client.o
 
@@ -12,7 +14,7 @@ all: server client
 	gcc $(CFLAGS) -O2 $< -o $@
 
 server: $(SERVER_OBJ)
-	gcc $^ -o $@
+	gcc $^ -o $@ -lpq
 
 client: $(CLIENT_OBJ)
 	gcc $^ -o $@
