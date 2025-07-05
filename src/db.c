@@ -28,7 +28,7 @@ u8 db_error_check(PGresult* result, const char* error_message,
 	return 0;
 }
 
-PGconn* db_init(void){
+u8 db_init(void){
 	char* host = dotenv_get("DB_HOST");
 	char* port = dotenv_get("DB_PORT");
 	char* name = dotenv_get("DB_NAME");
@@ -57,18 +57,20 @@ PGconn* db_init(void){
 		fprintf(stderr, "ERROR: Can't connect to database '%s'\n", 
 				PQerrorMessage(conn));
 		PQfinish(conn);
-		return NULL;
+		return 1;
 	}
 	PGresult* result = PQexec(
 			conn,
 			"CREATE TABLE IF NOT EXISTS users ("
 			"name TEXT NOT NULL, "
-			"password BIGINT"
+			"password NUMERIC"
 			");");
-	if(db_error_check(result, "Can't create table for users", PGRES_COMMAND_OK))
-		return NULL;
+	if(db_error_check(result, "Can't create table for users", PGRES_COMMAND_OK)){
+		db_exit();
+		return 1;
+	}
 	PQclear(result);
-	return conn;
+	return 0;
 }
 
 void db_exit(void){

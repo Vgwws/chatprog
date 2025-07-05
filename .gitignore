@@ -1,5 +1,15 @@
+*.swp
+*.log
+*.tmp
+*.so
 *.o
+*.a
+
 client*
 server*
+
+core
+
+.env
 
 !*.c

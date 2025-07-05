@@ -5,52 +5,99 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 
-#include "def.h"
+#include "common.h"
 
 int sockfd;
 
-u8 handle_prompt(char* prompt){
-	char response_name[BUFFER_SIZE];
-	char response_msg[BUFFER_SIZE];
+u8 handle_login(void){
 	while(1){
-		printf("Username\n");
-		char input[BUFFER_SIZE];
-		printf("%s: ", prompt);
-		if(!fgets(input, BUFFER_SIZE, stdin)){
-			fprintf(stderr, "ERROR: Can't read %s\n", prompt);
+		char username[BUFFER_SIZE];
+		char code[4];
+		char response[BUFFER_SIZE];
+		printf("Username: ");
+		if(!fgets(username, sizeof(username), stdin)){
+			fprintf(stderr, "ERROR: Can't read username\n");
 			return 1;
 		}
-		input[strlen(input) - 1] = '\0';
-		if(send(sockfd, input, strlen(input), 0) < 0){
-			fprintf(stderr, "ERROR: Can't send %s info to server\n", prompt);
+		username[strlen(username) - 1] = '\0';
+		if(send_str(sockfd, username)){
+			fprintf(stderr, "ERROR: Can't send username info to server\n");
 			return 1;
 		}
-		int name_len = recv(sockfd, response_name, BUFFER_SIZE - 1, 0);
-		int message_len = recv(sockfd, response_msg, BUFFER_SIZE - 1, 0);
-		if(name_len <= 0 || message_len <= 0){
+		printf("Waiting for response...\n");
+		if(accept_str(sockfd, code) <= 0){
 			printf("Disconnected from server\n");
 			return 1;
 		}
-		printf("%s\n", response_name);
-		if(!strcmp(response_name, "OK"))
-			break;
-		printf("%s", response_msg);
+		if(accept_str(sockfd, response) <= 0){
+			printf("Disconnected from server\n");
+			return 1;
+		}
+		printf("%s\n", code);
+		if(!strcmp(code, "BAD")){
+			fprintf(stderr, "%s", response);
+			continue;
+		}
+		char password[BUFFER_SIZE];
+		printf("Password: ");
+		if(!fgets(password, sizeof(password), stdin)){
+			fprintf(stderr, "ERROR: Can't read password\n");
+			return 1;
+		}
+		password[strlen(password) - 1] = '\0';
+		if(send_str(sockfd, password)){
+			fprintf(stderr, "ERROR: Can't send password info to server\n");
+			return 1;
+		}
+		printf("Waiting for response...\n");
+		if(accept_str(sockfd, code) <= 0){
+			printf("Disconnected from server\n");
+			return 1;
+		}
+		if(accept_str(sockfd, response) <= 0){
+			printf("Disconnected from server\n");
+			return 1;
+		}
+		printf("%s\n", code);
+		if(!strcmp(code, "BAD")){
+			fprintf(stderr, "%s", response);
+			continue;
+		}
+		break;
 	}
 	return 0;
 }
 
 void* get_message(void* args){
 	(void)args;
-	char buffer[BUFFER_SIZE];
-	char input[BUFFER_SIZE];
 	while(1){
-		int input_len = recv(sockfd, input, BUFFER_SIZE - 1, 0);
-		int message_len = recv(sockfd, buffer, BUFFER_SIZE - 1, 0);
-		if(message_len <= 0 || input_len <= 0){
+		char username[BUFFER_SIZE];
+		char message[BUFFER_SIZE];
+		u32 username_len_raw;
+		int recv_len = recv(sockfd, &username_len_raw, 4, 0);
+		if(recv_len <= 0){
 			printf("Disconnected from server\n");
 			break;
-		}	
-		printf("[%s]: %s", input, buffer);
+		}
+		u32 username_len = ntohl(username_len_raw);
+		recv_len = recv(sockfd, username, username_len, 0);
+		if(recv_len <= 0){
+			printf("Disconnected from server\n");
+			break;
+		}
+		u32 message_len_raw;
+		recv_len = recv(sockfd, &message_len_raw, 4, 0);
+		if(recv_len <= 0){
+			printf("Disconnected from server\n");
+			break;
+		}
+		u32 message_len = ntohl(message_len_raw);
+		recv_len = recv(sockfd, message, message_len, 0);
+		if(recv_len <= 0){
+			printf("Disconnected from server\n");
+			break;
+		}
+		printf("[%s]: %s", username, message);
 		fflush(stdout);
 	}
 	exit(0);
@@ -60,7 +107,6 @@ void* get_message(void* args){
 int main(void){	
 	struct sockaddr_in server_addr;
 	pthread_t tid;
-	char buffer[BUFFER_SIZE];
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if(sockfd < 0){
 		fprintf(stderr, "ERROR: Socket failed\n");
@@ -76,21 +122,19 @@ int main(void){
 		return 1;
 	}
 	printf("Connected to server\n");
-	if(handle_prompt("Username"))
-		return 1;
-	if(handle_prompt("Password"))
+	if(handle_login())
 		return 1;
 	if(pthread_create(&tid, NULL, get_message, NULL) != 0){
 		fprintf(stderr, "ERROR: Can't create thread\n");
 		return 1;
 	}
 	while(1){
-		if(!fgets(buffer, BUFFER_SIZE, stdin))
+		char buffer[BUFFER_SIZE];
+		if(!fgets(buffer, sizeof(buffer), stdin))
 			break;
-		if(send(sockfd, buffer, strlen(buffer), 0) < 0){
-			fprintf(stderr, "ERROR: Can't send message to server\n");
-			break;
-		}
+		printf("You: %s", buffer);
+		if(send_str(sockfd, buffer))
+			fprintf(stderr, "ERROR: Can't send to server\n");
 	}
 	close(sockfd);
 	return 0;

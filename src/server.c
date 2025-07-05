@@ -13,22 +13,26 @@
 int clients_socket[MAX_CLIENTS];
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void err_exit(const char* msg, unsigned int index, void* args){
-	fprintf(stderr, "ERROR: %s\n", msg);
+void client_exit(unsigned int index, void* args){
 	close(clients_socket[index]);
 	clients_socket[index] = -1;
 	free(args);
 }
 
+void err_exit(const char* msg, unsigned int index, void* args){
+	fprintf(stderr, "ERROR: %s\n", msg);
+	client_exit(index, args);
+}
+
 u8 send_code(const char* code, const char* msg, unsigned int index, void* args){
 	printf("Code: %s\n", code);
-	printf("Message: %s\n", msg);
-	if(send(clients_socket[index], code, strlen(code), 0) < 0){
-		err_exit("Can't send code to client", index, args);
+	printf("Message: %s", msg);
+	if(send_str(clients_socket[index], code)){
+		err_exit("Can't send to client", index, args);
 		return 1;
 	}
-	if(send(clients_socket[index], msg, strlen(msg), 0) < 0){
-		err_exit("Can't send message to client", index, args);
+	if(send_str(clients_socket[index], msg)){
+		err_exit("Can't send to client", index, args);
 		return 1;
 	}
 	return 0;
@@ -37,22 +41,17 @@ u8 send_code(const char* code, const char* msg, unsigned int index, void* args){
 void* client_handle(void* args){
 	char username[BUFFER_SIZE];
 	unsigned int index = *(unsigned int*)args;
-	int username_size;
 	while(1){
 		printf("Get Username and Password\n");
 		char password[BUFFER_SIZE];
-		username_size = recv(
-				clients_socket[index], username, BUFFER_SIZE, 0);
-		if(username_size == 0){
-			printf("Client disconnected\n");
-			close(clients_socket[index]);
-			clients_socket[index] = -1;
-			free(args);
-			pthread_exit(NULL);
-		}
-		if(username_size < 0){
-			err_exit("Recv failed", index, args);
-			pthread_exit(NULL);
+		switch(accept_str(clients_socket[index], username)){
+			case 0:
+				printf("Client disconnected\n");
+				client_exit(index, args);
+				pthread_exit(NULL);
+			case -1:
+				err_exit("Recv failed", index, args);
+				pthread_exit(NULL);
 		}
 		printf("Username: %s\n", username);
 		if(!strcmp(username, "OK") || 
@@ -63,19 +62,17 @@ void* client_handle(void* args){
 		}
 		if(send_code("OK", "\n", index, args))
 			pthread_exit(NULL);
-		int password_size = recv(
-				clients_socket[index], password, BUFFER_SIZE, 0);
-		if(password_size == 0){
-			printf("Client disconnected\n");
-			close(clients_socket[index]);
-			clients_socket[index] = -1;
-			free(args);
-			pthread_exit(NULL);
+		switch(accept_str(clients_socket[index], password)){
+			case 0:
+				printf("Client disconnected\n");
+				client_exit(index, args);
+				pthread_exit(NULL);
+			case -1:
+				err_exit("Recv failed", index, args);
+				pthread_exit(NULL);
 		}
-		if(password_size < 0){
-			err_exit("Recv failed", index, args);
+		if(send_code("OK", "\n", index, args))
 			pthread_exit(NULL);
-		}
 		u8 error = db_user_login(username, password);
 		switch(error){
 			case 2:
@@ -93,16 +90,9 @@ void* client_handle(void* args){
 	while(1){
 		printf("Handle messaging\n");
 		char message[BUFFER_SIZE];
-		int message_size = recv(
-				clients_socket[index], message, BUFFER_SIZE, 0);
-		if(message_size == 0){
-			printf("Client disconnected\n");
+		if(accept_str(clients_socket[index], message) <= 0)
 			break;
-		}
-		if(message_size < 0){
-			fprintf(stderr, "ERROR: Recv failed\n");
-			break;
-		}
+		printf("[%s]: %s", username, message);
 		if(db_insert_new_message(username, message)){
 			db_exit();
 			exit(1);
@@ -111,20 +101,18 @@ void* client_handle(void* args){
 		for(unsigned int i = 0; i < MAX_CLIENTS; i++){
 			if(i == index || clients_socket[i] < 0)
 				continue;
-			if(send(clients_socket[i], username, username_size, 0) < 0){
+			if(send_str(clients_socket[i], username)){
 				fprintf(stderr, "ERROR: Can't send to client\n");
 				continue;
 			}
-			if(send(clients_socket[i], message, message_size, 0) < 0){
+			if(send_str(clients_socket[i], message)){
 				fprintf(stderr, "ERROR: Can't send to client\n");
 				continue;
 			}
 		}
 		pthread_mutex_unlock(&clients_mutex);
 	}
-	close(clients_socket[index]);
-	clients_socket[index] = -1;
-	free(args);
+	client_exit(index, args);
 	pthread_exit(NULL);
 }
 
@@ -154,7 +142,10 @@ int main(void){
 	for(unsigned int i = 0; i < MAX_CLIENTS; i++){
 		clients_socket[i] = -1;
 	}
-	db_init();
+	printf("Initializing Database...\n");
+	if(db_init())
+		return 1;
+	db_start_chat();
 	while(1){
 		int index = -1;
 		for(unsigned int i = 0; i < MAX_CLIENTS; i++){
