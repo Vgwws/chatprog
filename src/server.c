@@ -54,13 +54,13 @@ void* client_handle(void* args){
 				pthread_exit(NULL);
 		}
 		printf("Username: %s\n", username);
-		if(!strcmp(username, "OK") || 
+		if(!strcmp(username, "GOOD") || 
 				!strcmp(username, "BAD")){
 			if(send_code("BAD", "Can't use system name\n", index, args))
 				pthread_exit(NULL);	
 			continue;
 		}
-		if(send_code("OK", "\n", index, args))
+		if(send_code("GOOD", "\n", index, args))
 			pthread_exit(NULL);
 		switch(accept_str(clients_socket[index], password)){
 			case 0:
@@ -71,7 +71,7 @@ void* client_handle(void* args){
 				err_exit("Recv failed", index, args);
 				pthread_exit(NULL);
 		}
-		if(send_code("OK", "\n", index, args))
+		if(send_code("GOOD", "\n", index, args))
 			pthread_exit(NULL);
 		u8 error = db_user_login(username, password);
 		switch(error){
